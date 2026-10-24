@@ -13,14 +13,14 @@ const readDurationSec = parseInt(input.readDurationSec, 10) || 8;
 const maxCycles = parseInt(input.maxCycles, 10) || 30;
 
 console.log('===================================================================');
-console.log('>> Apify Autonomous Viewport & Adsterra Popunder Engine (v2.0)');
+console.log('>> Apify Adsterra Monetization & Viewport Bot (v2.2)');
 console.log(`>> Target URL: ${targetUrl}`);
 console.log(`>> Device Mode: ${deviceType.toUpperCase()}`);
 console.log(`>> Post-Click Dwell: ${dwellSeconds}s | Native Ad Chance: ${nativeAdChance}%`);
 console.log(`>> Total Single-View Sessions: ${maxCycles}`);
 console.log('===================================================================');
 
-// 1. Initialize Apify Proxy Pool
+// 1. Initialize Apify Residential / Datacenter Proxy Pool
 let proxyConfiguration = null;
 try {
     if (input.proxyConfiguration) {
@@ -32,7 +32,7 @@ try {
     }
     console.log('[+] Apify Proxy pool successfully initialized.');
 } catch (e) {
-    console.warn(`[!] Residential proxy note: ${e.message}. Using standard datacenter pool fallback...`);
+    console.warn(`[!] Residential proxy note: ${e.message}. Using standard pool fallback...`);
     try {
         proxyConfiguration = await Actor.createProxyConfiguration();
     } catch (e2) {
@@ -40,7 +40,7 @@ try {
     }
 }
 
-// 2. Curated Device Fingerprint Profiles
+// 2. High-Trust Device Fingerprint Profiles
 const DESKTOP_PROFILES = [
     {
         name: 'Windows 11 / Chrome 128',
@@ -102,13 +102,12 @@ function selectProfile(mode) {
     if (mode === 'desktop') {
         return DESKTOP_PROFILES[Math.floor(Math.random() * DESKTOP_PROFILES.length)];
     }
-    // Mixed: 50/50 split
     return Math.random() < 0.5
         ? MOBILE_PROFILES[Math.floor(Math.random() * MOBILE_PROFILES.length)]
         : DESKTOP_PROFILES[Math.floor(Math.random() * DESKTOP_PROFILES.length)];
 }
 
-// 3. Launch Master Browser Process
+// 3. Launch Master Chromium Engine
 const browser = await chromium.launch({
     headless: true,
     args: [
@@ -122,8 +121,8 @@ const browser = await chromium.launch({
 });
 
 let completedCycles = 0;
-let totalClicks = 0;
-let nativeAdClicks = 0;
+let totalAdsterraClicks = 0;
+let popundersCaptured = 0;
 
 for (let cycle = 1; cycle <= maxCycles; cycle++) {
     const profile = selectProfile(deviceType);
@@ -159,14 +158,14 @@ for (let cycle = 1; cycle <= maxCycles; cycle++) {
         };
     }
 
-    // Ephemeral, completely isolated context (1 cycle = 1 view simulation)
+    // Ephemeral, completely isolated context (1 cycle = 1 unique view simulation)
     const context = await browser.newContext(contextOptions);
 
-    // Track any ad popunders or new tabs triggered by Adsterra / Social Bar
+    // Track all newly spawned popunders / smartlink tabs
     const newTabs = [];
     context.on('page', (newPage) => {
         newTabs.push(newPage);
-        console.log(`[+] AD POPUNDER / NEW TAB CAPTURED`);
+        console.log(`[+] ADSTERRA POPUNDER / AD TAB INTERCEPTED`);
     });
 
     const page = await context.newPage();
@@ -180,10 +179,10 @@ for (let cycle = 1; cycle <= maxCycles; cycle++) {
     try {
         console.log(`[*] [1/4] Visiting target URL: ${targetUrl}...`);
         await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 50000 });
-        await page.waitForTimeout(2000 + Math.random() * 1000);
+        await page.waitForTimeout(2500 + Math.random() * 1000);
 
         // -------------------------------------------------------------
-        // Step 1: Natural Human Reading & Scrolling Simulation
+        // Step 1: Human Reading & Smooth Scroll Simulation
         // -------------------------------------------------------------
         console.log(`[*] [2/4] Simulating natural reading & human scroll (${readDurationSec}s)...`);
         const startTime = Date.now();
@@ -196,132 +195,164 @@ for (let cycle = 1; cycle <= maxCycles; cycle++) {
             const readPause = Math.floor(Math.random() * 1800) + 1200;
             await page.waitForTimeout(readPause);
 
-            if (Math.random() < 0.2) {
-                await page.evaluate(() => window.scrollBy({ top: -80, behavior: 'smooth' }));
+            if (Math.random() < 0.25) {
+                await page.evaluate(() => window.scrollBy({ top: -100, behavior: 'smooth' }));
                 await page.waitForTimeout(800);
             }
         }
 
-        // -------------------------------------------------------------
-        // Step 2: Target Selection (Randomized across ALL Page Targets)
-        // -------------------------------------------------------------
-        console.log(`[*] [3/4] Scanning page for interactive elements & native ads...`);
+        // Pre-click human interaction: interact with loan slider to establish authentic user behavior
+        try {
+            const principalInput = await page.$('#calcPrincipal');
+            if (principalInput && Math.random() < 0.7) {
+                const randomAmount = Math.floor(Math.random() * 30000) + 15000;
+                await page.evaluate((amt) => {
+                    const el = document.getElementById('calcPrincipal');
+                    if (el) {
+                        el.value = amt;
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                }, randomAmount);
+                await page.waitForTimeout(1000);
+            }
+        } catch (e) {}
 
-        // Specific Native Ad Selectors
-        const nativeAdSelectors = [
+        // -------------------------------------------------------------
+        // Step 2: ADSTERRA TARGET SELECTION (Dedicated Monetization Engine)
+        // -------------------------------------------------------------
+        console.log(`[*] [3/4] Scanning for Adsterra ad placements & smartlinks...`);
+
+        // Pool of explicit Adsterra target candidates on VelvetX
+        const adsterraCandidates = [];
+
+        // Candidate Type 1: Adsterra Social Bar (In-page push notifications / floating banners)
+        const socialBarSelectors = [
             "[class*='social-bar']",
             "[id*='social-bar']",
-            "[class*='ad-banner']",
-            "[id*='ad-banner']",
-            "[class*='native-ad']",
-            "[class*='sponsored']",
-            "[data-ad]",
-            "a[href*='araplhn']",
-            "a[href*='abscloud']",
-            "a[href*='bauval']",
-            "iframe[src*='ad']",
-            "[class*='banner'] a",
-            ".native-widget a"
+            "[id^='sb-']",
+            "[class*='toast']",
+            "div[style*='z-index: 2147483647']",
+            "[data-sb]"
         ];
-
-        // Collect ALL visible native ads
-        const visibleNativeAds = [];
-        for (const selector of nativeAdSelectors) {
+        for (const selector of socialBarSelectors) {
             try {
-                const ads = await page.$$(selector);
-                for (const ad of ads) {
-                    if (await ad.isVisible()) {
-                        visibleNativeAds.push(ad);
+                const items = await page.$$(selector);
+                for (const item of items) {
+                    if (await item.isVisible()) {
+                        adsterraCandidates.push({
+                            type: 'Adsterra Social Bar',
+                            element: item,
+                            label: 'Social Bar Floating Ad'
+                        });
                     }
                 }
             } catch (e) {}
         }
 
-        // Standard interactive page elements
-        const standardSelectors = [
-            "button",
-            ".btn",
-            ".apply-btn",
-            ".cta-button",
-            "[role='button']",
-            "input[type='submit']",
-            "a.btn",
-            "a[class*='btn']",
-            "a[class*='apply']",
-            "a[class*='card']"
-        ];
-
-        const visibleStandards = [];
-        for (const selector of standardSelectors) {
-            try {
-                const elements = await page.$$(selector);
-                for (const el of elements) {
-                    if (await el.isVisible()) {
-                        const txt = (await el.innerText() || '').trim().toLowerCase();
-                        if (!['▲', 'top', 'x', 'close'].includes(txt)) {
-                            visibleStandards.push(el);
-                        }
-                    }
-                }
-            } catch (e) {}
-        }
-
-        // Substantive links pool
-        const substantiveLinks = [];
+        // Candidate Type 2: Adsterra Native Banner Container
         try {
-            const allLinks = await page.$$("a[href]");
-            for (const link of allLinks) {
-                if (await link.isVisible()) {
-                    const href = (await link.getAttribute('href') || '').trim();
-                    const txt = (await link.innerText() || '').trim().toLowerCase();
-                    if (href && href !== '#' && !href.startsWith('javascript:') && !['▲', 'top', 'x', 'close', 'privacy', 'terms', 'report'].some(bad => txt.includes(bad) || href.includes(bad))) {
-                        substantiveLinks.push(link);
-                    }
+            const nativeBanner = await page.$("#container-13e8b8f593a1fa3217160e0ed819046b, #adsterra-top-native");
+            if (nativeBanner && await nativeBanner.isVisible()) {
+                // Check if iframe or links inside
+                const bannerLinks = await nativeBanner.$$('a, iframe');
+                if (bannerLinks.length > 0) {
+                    adsterraCandidates.push({
+                        type: 'Adsterra Native Banner Unit',
+                        element: bannerLinks[0],
+                        label: 'Native Banner Unit'
+                    });
                 }
             }
         } catch (e) {}
 
-        let targetElement = null;
-        let isNativeAdTarget = false;
-
-        // Roll probability for Native Ad targeting
-        const roll = Math.random() * 100;
-        if (roll < nativeAdChance && visibleNativeAds.length > 0) {
-            targetElement = visibleNativeAds[Math.floor(Math.random() * visibleNativeAds.length)];
-            isNativeAdTarget = true;
-        }
-
-        // If no native ad picked or none found: pick randomly from substantive elements / links
-        if (!targetElement) {
-            const pool = visibleStandards.length > 0 ? visibleStandards : substantiveLinks;
-            if (pool.length > 0) {
-                // Random element selection guarantees diverse, non-repeating clicks!
-                targetElement = pool[Math.floor(Math.random() * pool.length)];
+        // Candidate Type 3: Adsterra Native Recommendation Cards
+        try {
+            const nativeCards = await page.$$('#adsterra-native-recommendations a.native-ad-item');
+            for (let i = 0; i < nativeCards.length; i++) {
+                const card = nativeCards[i];
+                if (await card.isVisible()) {
+                    const title = (await card.$eval('.native-ad-title', el => el.innerText).catch(() => 'Native Offer')).trim();
+                    adsterraCandidates.push({
+                        type: 'Adsterra Native Card',
+                        element: card,
+                        label: `Native Card: "${title.slice(0, 35)}"`
+                    });
+                }
             }
+        } catch (e) {}
+
+        // Candidate Type 4: Sponsored Box Direct CTA ("View Special Rates →")
+        try {
+            const sponsoredCta = await page.$('.adsterra-sponsored-box a.ad-cta-btn');
+            if (sponsoredCta && await sponsoredCta.isVisible()) {
+                adsterraCandidates.push({
+                    type: 'Adsterra Sponsored CTA',
+                    element: sponsoredCta,
+                    label: 'Sponsored Box CTA (View Special Rates)'
+                });
+            }
+        } catch (e) {}
+
+        // Candidate Type 5: Finance Cards Apply Buttons ("Check Rate" / "Apply Securely")
+        try {
+            const cardApplyBtns = await page.$$('.finance-card .btn-apply');
+            for (let i = 0; i < cardApplyBtns.length; i++) {
+                const btn = cardApplyBtns[i];
+                if (await btn.isVisible()) {
+                    const btnText = (await btn.innerText() || '').trim();
+                    adsterraCandidates.push({
+                        type: 'Adsterra Card CTA',
+                        element: btn,
+                        label: `Card Button #${i + 1} (${btnText})`
+                    });
+                }
+            }
+        } catch (e) {}
+
+        // Candidate Type 6: Header CTA Button ("Check My Rate")
+        try {
+            const headerCta = await page.$('header a.cta-btn');
+            if (headerCta && await headerCta.isVisible()) {
+                adsterraCandidates.push({
+                    type: 'Adsterra Header CTA',
+                    element: headerCta,
+                    label: 'Header CTA (Check My Rate)'
+                });
+            }
+        } catch (e) {}
+
+        // Candidate Type 7: Hero Pre-Qualification Button ("Unlock Pre-Qualified Offers")
+        try {
+            const heroBtn = await page.$('button[onclick*="triggerMatchingOffers"]');
+            if (heroBtn && await heroBtn.isVisible()) {
+                adsterraCandidates.push({
+                    type: 'Adsterra Hero Trigger',
+                    element: heroBtn,
+                    label: 'Hero Button (Unlock Pre-Qualified Offers)'
+                });
+            }
+        } catch (e) {}
+
+        console.log(`[+] Found ${adsterraCandidates.length} eligible Adsterra target placements on page.`);
+
+        // Pick one Adsterra candidate uniformly at random to ensure diverse rotation
+        let selectedTarget = null;
+        if (adsterraCandidates.length > 0) {
+            selectedTarget = adsterraCandidates[Math.floor(Math.random() * adsterraCandidates.length)];
         }
 
-        // -------------------------------------------------------------
-        // Step 3: Authentic Click & Ad Popunder Interception
-        // -------------------------------------------------------------
-        let clickedDestination = 'in-page';
+        let clickedPlacementLabel = 'Page Click (Popunder Trigger)';
 
-        if (targetElement) {
-            const tag = await targetElement.evaluate(el => el.tagName.toLowerCase());
-            const textPreview = (await targetElement.innerText() || '').trim().slice(0, 35);
-            const hrefPreview = (await targetElement.getAttribute('href') || '').slice(0, 50);
+        if (selectedTarget) {
+            clickedPlacementLabel = `${selectedTarget.type} -> ${selectedTarget.label}`;
+            console.log(`[+] TARGETING ADSTERRA: [${selectedTarget.type}] "${selectedTarget.label}"`);
 
-            await targetElement.scrollIntoViewIfNeeded();
+            await selectedTarget.element.scrollIntoViewIfNeeded();
             await page.waitForTimeout(600);
 
-            if (isNativeAdTarget) {
-                console.log(`[+] TRIGGERING NATIVE AD CLICK: <${tag}> "${textPreview}" -> ${hrefPreview || 'ad-widget'}`);
-                nativeAdClicks++;
-            } else {
-                console.log(`[+] TRIGGERING RANDOM TARGET CLICK: <${tag}> "${textPreview}" -> ${hrefPreview || 'in-page'}`);
-            }
-
-            // Authentic click or touch tap based on active profile
-            const box = await targetElement.boundingBox();
+            // Execute authentic click / touch tap
+            const box = await selectedTarget.element.boundingBox();
             if (box) {
                 const clickX = box.x + box.width / 2;
                 const clickY = box.y + box.height / 2;
@@ -335,45 +366,87 @@ for (let cycle = 1; cycle <= maxCycles; cycle++) {
                     await page.mouse.up();
                 }
             } else {
-                await targetElement.click();
+                await selectedTarget.element.click();
             }
 
-            totalClicks++;
-
-            // Wait for popunder or ad redirect to resolve
-            await page.waitForTimeout(3000);
-
-            let activeAdTab = null;
-            if (newTabs.length > 0) {
-                activeAdTab = newTabs[newTabs.length - 1];
-            } else if (context.pages().length > 1) {
-                const pages = context.pages();
-                activeAdTab = pages[pages.length - 1];
-            }
-
-            // ---------------------------------------------------------
-            // Step 4: 10-Second Post-Click Dwell
-            // ---------------------------------------------------------
-            if (activeAdTab && activeAdTab !== page) {
-                try {
-                    await activeAdTab.waitForLoadState('domcontentloaded', { timeout: 12000 });
-                } catch (e) {}
-                clickedDestination = activeAdTab.url();
-                console.log(`[+] AD TAB Active & Loaded: ${clickedDestination.slice(0, 85)}`);
-
-                console.log(`[*] [4/4] Dwelling on clicked ad page for ${dwellSeconds}s...`);
-                await activeAdTab.evaluate(() => window.scrollBy({ top: 250, behavior: 'smooth' }));
-                await activeAdTab.waitForTimeout(dwellSeconds * 1000);
-            } else {
-                clickedDestination = page.url();
-                console.log(`[*] [4/4] In-page target dwelling for ${dwellSeconds}s...`);
-                await page.waitForTimeout(dwellSeconds * 1000);
-            }
-
-            console.log(`[✓] ${dwellSeconds}-second post-click dwell complete.`);
+            totalAdsterraClicks++;
         } else {
-            console.log(`[*] No clickable element found on this pass. Dwelling 5s on page.`);
-            await page.waitForTimeout(5000);
+            // Fallback: Click on main viewport body to guarantee Adsterra Popunder trigger
+            console.log(`[*] Clicking viewport body to activate Adsterra Popunder listener...`);
+            await page.mouse.click(250, 300);
+            totalAdsterraClicks++;
+        }
+
+        // Wait for Adsterra Popunder or Smartlink new tab to spawn and begin redirect chain
+        console.log(`[*] Waiting for Adsterra redirect chain to resolve...`);
+        await page.waitForTimeout(4000);
+
+        // -------------------------------------------------------------
+        // Step 3: INTERCEPT AD TAB & RESOLVE ADSTERRA REDIRECT CHAIN
+        // -------------------------------------------------------------
+        let activeAdTab = null;
+        if (newTabs.length > 0) {
+            activeAdTab = newTabs[newTabs.length - 1];
+        } else if (context.pages().length > 1) {
+            const pages = context.pages();
+            activeAdTab = pages[pages.length - 1];
+        }
+
+        let is404DeadTab = false;
+        let finalAdUrl = '';
+
+        if (activeAdTab && activeAdTab !== page) {
+            popundersCaptured++;
+            console.log(`[+] ADSTERRA AD TAB ACTIVE: Initial URL: ${activeAdTab.url().slice(0, 85)}`);
+
+            // Wait for JS trampoline / document.forms[0].submit() to navigate to final advertiser
+            try {
+                await activeAdTab.waitForLoadState('domcontentloaded', { timeout: 12000 });
+            } catch (e) {}
+
+            await activeAdTab.waitForTimeout(3000);
+
+            finalAdUrl = activeAdTab.url();
+            const tabTitle = await activeAdTab.title().catch(() => '');
+            const bodyContent = await activeAdTab.evaluate(() => document.body ? document.body.innerText.slice(0, 200) : '').catch(() => '');
+
+            // Detect if ad network dropped with 404 or nginx error
+            if (
+                finalAdUrl.includes('404') ||
+                tabTitle.includes('404') ||
+                bodyContent.includes('404 Not Found') ||
+                bodyContent.includes('nginx')
+            ) {
+                is404DeadTab = true;
+                console.warn(`[!] Ad destination returned 404/nginx for this IP. Closing dead tab cleanly.`);
+                await activeAdTab.close().catch(() => {});
+                activeAdTab = null;
+            } else {
+                console.log(`[✓] ADSTERRA ADVERTISED OFFER RESOLVED: ${finalAdUrl.slice(0, 85)} (Title: "${tabTitle.slice(0, 30)}")`);
+            }
+        }
+
+        // -------------------------------------------------------------
+        // Step 4: 10-SECOND HIGH-ENGAGEMENT DWELL
+        // -------------------------------------------------------------
+        if (activeAdTab && !is404DeadTab && activeAdTab !== page) {
+            console.log(`[*] [4/4] Dwelling on active Adsterra ad offer for ${dwellSeconds}s (performing natural human scroll)...`);
+            try {
+                const adDwellChunk = Math.floor((dwellSeconds * 1000) / 3);
+                for (let i = 0; i < 3; i++) {
+                    await activeAdTab.evaluate(() => window.scrollBy({ top: 250, behavior: 'smooth' }));
+                    await activeAdTab.waitForTimeout(adDwellChunk);
+                }
+            } catch (e) {}
+            console.log(`[✓] ${dwellSeconds}-second Adsterra ad dwell complete.`);
+        } else {
+            console.log(`[*] [4/4] Dwelling on target page for ${dwellSeconds}s (reading & maintaining session length)...`);
+            const targetDwellChunk = Math.floor((dwellSeconds * 1000) / 3);
+            for (let i = 0; i < 3; i++) {
+                await page.evaluate(() => window.scrollBy({ top: 150, behavior: 'smooth' }));
+                await page.waitForTimeout(targetDwellChunk);
+            }
+            console.log(`[✓] ${dwellSeconds}-second page dwell complete.`);
         }
 
         completedCycles++;
@@ -384,9 +457,11 @@ for (let cycle = 1; cycle <= maxCycles; cycle++) {
             targetUrl: targetUrl,
             device: profile.name,
             isMobile: profile.isMobile,
-            isNativeAd: isNativeAdTarget,
-            destination: clickedDestination,
+            adsterraPlacement: clickedPlacementLabel,
+            popunderCaptured: !!activeAdTab && !is404DeadTab,
+            adDestinationUrl: (!is404DeadTab && finalAdUrl) ? finalAdUrl : 'in-page-popunder-triggered',
             dwellSeconds: dwellSeconds,
+            status: 'monetized_view',
             timestamp: new Date().toISOString()
         });
 
@@ -408,8 +483,8 @@ await browser.close();
 
 console.log('\n===================================================================');
 console.log(`[✓] Full Run Complete!`);
-console.log(`>> Total Cycles: ${completedCycles}/${maxCycles}`);
-console.log(`>> Total Clicks: ${totalClicks} (Native Ads: ${nativeAdClicks})`);
+console.log(`>> Total Completed Cycles: ${completedCycles}/${maxCycles}`);
+console.log(`>> Adsterra Units Targeted: ${totalAdsterraClicks} (Popunders/Tabs Captured: ${popundersCaptured})`);
 console.log(`>> All sessions executed as ephemeral single-view simulations.`);
 console.log('===================================================================');
 

@@ -1,16 +1,12 @@
 // language: JavaScript, file: src/main.js, runtime: Node.js 20 / Apify SDK / Playwright
 import { Actor } from 'apify';
-import { chromium, devices } from 'playwright';
+import { chromium } from 'playwright';
 
 await Actor.init();
 
 const input = await Actor.getInput() || {};
 const targetUrl = (input.targetUrl || 'https://velvetx.masterverse.in/').trim();
 const deviceType = input.deviceType || 'mixed'; // 'desktop', 'mobile', or 'mixed'
-const proxyTier = input.proxyTier || 'RESIDENTIAL';
-const countryCodes = input.countryCodes && input.countryCodes.length > 0 
-    ? input.countryCodes 
-    : ['US', 'GB', 'DE', 'FR', 'CA'];
 const dwellSeconds = parseInt(input.dwellSeconds, 10) || 10;
 const nativeAdChance = parseInt(input.nativeAdChance, 10) || 40;
 const readDurationSec = parseInt(input.readDurationSec, 10) || 8;
@@ -19,8 +15,7 @@ const maxCycles = parseInt(input.maxCycles, 10) || 30;
 console.log('===================================================================');
 console.log('>> Apify Autonomous Viewport & Adsterra Popunder Engine (v2.0)');
 console.log(`>> Target URL: ${targetUrl}`);
-console.log(`>> Device Mode: ${deviceType.toUpperCase()} | Proxy Pool: ${proxyTier}`);
-console.log(`>> Tier-1 Geos: ${countryCodes.join(', ')}`);
+console.log(`>> Device Mode: ${deviceType.toUpperCase()}`);
 console.log(`>> Post-Click Dwell: ${dwellSeconds}s | Native Ad Chance: ${nativeAdChance}%`);
 console.log(`>> Total Single-View Sessions: ${maxCycles}`);
 console.log('===================================================================');
@@ -28,13 +23,16 @@ console.log('===================================================================
 // 1. Initialize Apify Proxy Pool
 let proxyConfiguration = null;
 try {
-    proxyConfiguration = await Actor.createProxyConfiguration({
-        groups: proxyTier === 'RESIDENTIAL' ? ['RESIDENTIAL'] : undefined,
-        countryCodes: countryCodes
-    });
-    console.log(`[+] Apify ${proxyTier} Proxy pool initialized across ${countryCodes.length} countries.`);
+    if (input.proxyConfiguration) {
+        proxyConfiguration = await Actor.createProxyConfiguration(input.proxyConfiguration);
+    } else {
+        proxyConfiguration = await Actor.createProxyConfiguration({
+            groups: ['RESIDENTIAL']
+        });
+    }
+    console.log('[+] Apify Proxy pool successfully initialized.');
 } catch (e) {
-    console.warn(`[!] Residential proxy note: ${e.message}. Using standard pool fallback...`);
+    console.warn(`[!] Residential proxy note: ${e.message}. Using standard datacenter pool fallback...`);
     try {
         proxyConfiguration = await Actor.createProxyConfiguration();
     } catch (e2) {
@@ -128,7 +126,6 @@ let totalClicks = 0;
 let nativeAdClicks = 0;
 
 for (let cycle = 1; cycle <= maxCycles; cycle++) {
-    const geo = countryCodes[(cycle - 1) % countryCodes.length];
     const profile = selectProfile(deviceType);
     const sessionId = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
@@ -140,7 +137,7 @@ for (let cycle = 1; cycle <= maxCycles; cycle++) {
     }
 
     console.log(`\n===================================================================`);
-    console.log(`=== [CYCLE #${cycle}/${maxCycles}] 1-VIEW SESSION | Geo: ${geo} | Device: ${profile.name} ===`);
+    console.log(`=== [CYCLE #${cycle}/${maxCycles}] 1-VIEW SESSION | Device: ${profile.name} ===`);
     console.log(`===================================================================`);
 
     const contextOptions = {
@@ -191,17 +188,14 @@ for (let cycle = 1; cycle <= maxCycles; cycle++) {
         console.log(`[*] [2/4] Simulating natural reading & human scroll (${readDurationSec}s)...`);
         const startTime = Date.now();
         while (Date.now() - startTime < readDurationSec * 1000) {
-            // Random scroll distance (human chunk)
             const scrollChunk = Math.floor(Math.random() * 320) + 180;
             await page.evaluate((step) => {
                 window.scrollBy({ top: step, behavior: 'smooth' });
             }, scrollChunk);
 
-            // Natural pause while human reads text / inspects cards
             const readPause = Math.floor(Math.random() * 1800) + 1200;
             await page.waitForTimeout(readPause);
 
-            // 20% chance of small micro-scroll upward (re-reading simulation)
             if (Math.random() < 0.2) {
                 await page.evaluate(() => window.scrollBy({ top: -80, behavior: 'smooth' }));
                 await page.waitForTimeout(800);
@@ -209,11 +203,11 @@ for (let cycle = 1; cycle <= maxCycles; cycle++) {
         }
 
         // -------------------------------------------------------------
-        // Step 2: Target Selection (Native Ads vs CTA Buttons)
+        // Step 2: Target Selection (Randomized across ALL Page Targets)
         // -------------------------------------------------------------
         console.log(`[*] [3/4] Scanning page for interactive elements & native ads...`);
 
-        // Specific Native Ad Selectors (Adsterra banners, Social Bar push, in-page push, sponsored)
+        // Specific Native Ad Selectors
         const nativeAdSelectors = [
             "[class*='social-bar']",
             "[id*='social-bar']",
@@ -230,6 +224,19 @@ for (let cycle = 1; cycle <= maxCycles; cycle++) {
             ".native-widget a"
         ];
 
+        // Collect ALL visible native ads
+        const visibleNativeAds = [];
+        for (const selector of nativeAdSelectors) {
+            try {
+                const ads = await page.$$(selector);
+                for (const ad of ads) {
+                    if (await ad.isVisible()) {
+                        visibleNativeAds.push(ad);
+                    }
+                }
+            } catch (e) {}
+        }
+
         // Standard interactive page elements
         const standardSelectors = [
             "button",
@@ -238,63 +245,58 @@ for (let cycle = 1; cycle <= maxCycles; cycle++) {
             ".cta-button",
             "[role='button']",
             "input[type='submit']",
+            "a.btn",
             "a[class*='btn']",
             "a[class*='apply']",
             "a[class*='card']"
         ];
+
+        const visibleStandards = [];
+        for (const selector of standardSelectors) {
+            try {
+                const elements = await page.$$(selector);
+                for (const el of elements) {
+                    if (await el.isVisible()) {
+                        const txt = (await el.innerText() || '').trim().toLowerCase();
+                        if (!['▲', 'top', 'x', 'close'].includes(txt)) {
+                            visibleStandards.push(el);
+                        }
+                    }
+                }
+            } catch (e) {}
+        }
+
+        // Substantive links pool
+        const substantiveLinks = [];
+        try {
+            const allLinks = await page.$$("a[href]");
+            for (const link of allLinks) {
+                if (await link.isVisible()) {
+                    const href = (await link.getAttribute('href') || '').trim();
+                    const txt = (await link.innerText() || '').trim().toLowerCase();
+                    if (href && href !== '#' && !href.startsWith('javascript:') && !['▲', 'top', 'x', 'close', 'privacy', 'terms', 'report'].some(bad => txt.includes(bad) || href.includes(bad))) {
+                        substantiveLinks.push(link);
+                    }
+                }
+            }
+        } catch (e) {}
 
         let targetElement = null;
         let isNativeAdTarget = false;
 
         // Roll probability for Native Ad targeting
         const roll = Math.random() * 100;
-        if (roll < nativeAdChance) {
-            // Attempt to locate a native ad element first
-            for (const selector of nativeAdSelectors) {
-                try {
-                    const ads = await page.$$(selector);
-                    for (const ad of ads) {
-                        if (await ad.isVisible()) {
-                            targetElement = ad;
-                            isNativeAdTarget = true;
-                            break;
-                        }
-                    }
-                    if (targetElement) break;
-                } catch (e) {}
-            }
+        if (roll < nativeAdChance && visibleNativeAds.length > 0) {
+            targetElement = visibleNativeAds[Math.floor(Math.random() * visibleNativeAds.length)];
+            isNativeAdTarget = true;
         }
 
-        // Fallback to standard CTA buttons or substantive links
+        // If no native ad picked or none found: pick randomly from substantive elements / links
         if (!targetElement) {
-            for (const selector of standardSelectors) {
-                try {
-                    const elements = await page.$$(selector);
-                    for (const el of elements) {
-                        if (await el.isVisible()) {
-                            targetElement = el;
-                            break;
-                        }
-                    }
-                    if (targetElement) break;
-                } catch (e) {}
-            }
-        }
-
-        // Ultimate fallback to any substantive visible link
-        if (!targetElement) {
-            const allLinks = await page.$$("a[href]");
-            for (const link of allLinks) {
-                try {
-                    if (await link.isVisible()) {
-                        const href = (await link.getAttribute('href') || '').trim();
-                        const txt = (await link.innerText() || '').trim().toLowerCase();
-                        if (href && href !== '#' && !href.startsWith('javascript:') && !['▲', 'top', 'x'].includes(txt)) {
-                            targetElement = link;
-                            break;
-                        }
-                    }
-                } catch (e) {}
+            const pool = visibleStandards.length > 0 ? visibleStandards : substantiveLinks;
+            if (pool.length > 0) {
+                // Random element selection guarantees diverse, non-repeating clicks!
+                targetElement = pool[Math.floor(Math.random() * pool.length)];
             }
         }
 
@@ -315,7 +317,7 @@ for (let cycle = 1; cycle <= maxCycles; cycle++) {
                 console.log(`[+] TRIGGERING NATIVE AD CLICK: <${tag}> "${textPreview}" -> ${hrefPreview || 'ad-widget'}`);
                 nativeAdClicks++;
             } else {
-                console.log(`[+] TRIGGERING CTA CLICK: <${tag}> "${textPreview}" -> ${hrefPreview || 'in-page'}`);
+                console.log(`[+] TRIGGERING RANDOM TARGET CLICK: <${tag}> "${textPreview}" -> ${hrefPreview || 'in-page'}`);
             }
 
             // Authentic click or touch tap based on active profile
@@ -360,7 +362,6 @@ for (let cycle = 1; cycle <= maxCycles; cycle++) {
                 console.log(`[+] AD TAB Active & Loaded: ${clickedDestination.slice(0, 85)}`);
 
                 console.log(`[*] [4/4] Dwelling on clicked ad page for ${dwellSeconds}s...`);
-                // Simulate human reading on the ad page
                 await activeAdTab.evaluate(() => window.scrollBy({ top: 250, behavior: 'smooth' }));
                 await activeAdTab.waitForTimeout(dwellSeconds * 1000);
             } else {
@@ -381,7 +382,6 @@ for (let cycle = 1; cycle <= maxCycles; cycle++) {
         await Actor.pushData({
             cycle: cycle,
             targetUrl: targetUrl,
-            geo: geo,
             device: profile.name,
             isMobile: profile.isMobile,
             isNativeAd: isNativeAdTarget,

@@ -1,0 +1,72 @@
+{
+  "title": "Autonomous Viewport & Ad Engine Configuration",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "targetUrl": {
+      "title": "Target Website URL",
+      "type": "string",
+      "description": "Enter the website URL to visit, read, scroll, and execute clicks on.",
+      "editor": "textfield",
+      "prefill": "https://velvetx.masterverse.in/",
+      "default": "https://velvetx.masterverse.in/"
+    },
+    "deviceType": {
+      "title": "Device & OS Emulation",
+      "type": "string",
+      "description": "Choose between Desktop OS (Windows 11 / macOS) or Mobile (iOS iPhone / Android) with authentic touch emulation.",
+      "editor": "select",
+      "default": "mixed",
+      "enum": ["mixed", "desktop", "mobile"],
+      "enumTitles": ["Random Mixed (Desktop + Mobile)", "Desktop Only (Windows 11 / macOS)", "Mobile Only (iPhone / Android)"]
+    },
+    "proxyConfiguration": {
+      "title": "Proxy Configuration",
+      "type": "object",
+      "description": "Select Apify Residential (recommended for high trust score) or Datacenter proxies.",
+      "editor": "proxy",
+      "default": {
+        "useApifyProxy": true,
+        "apifyProxyGroups": ["RESIDENTIAL"],
+        "apifyProxyCountry": "US"
+      }
+    },
+    "dwellSeconds": {
+      "title": "Post-Click Dwell Duration (seconds)",
+      "type": "integer",
+      "description": "How many seconds to keep the clicked ad page / tab active before complete data wipe.",
+      "editor": "number",
+      "default": 10,
+      "minimum": 1,
+      "maximum": 60
+    },
+    "nativeAdChance": {
+      "title": "Native Ad Click Probability (%)",
+      "type": "integer",
+      "description": "Percentage probability to prioritize clicking native ad banners, Social Bar push ads, or ad widgets.",
+      "editor": "number",
+      "default": 40,
+      "minimum": 0,
+      "maximum": 100
+    },
+    "readDurationSec": {
+      "title": "Human Read & Scroll Simulation (seconds)",
+      "type": "integer",
+      "description": "Time spent naturally reading and scrolling the page before executing a click.",
+      "editor": "number",
+      "default": 8,
+      "minimum": 3,
+      "maximum": 30
+    },
+    "maxCycles": {
+      "title": "Total Simulation Cycles (1 View per Cycle)",
+      "type": "integer",
+      "description": "Number of unique, fully isolated single-view sessions to execute.",
+      "editor": "number",
+      "default": 30,
+      "minimum": 1,
+      "maximum": 500
+    }
+  },
+  "required": ["targetUrl"]
+}

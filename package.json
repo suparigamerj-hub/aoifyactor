@@ -1,0 +1,15 @@
+{
+  "name": "autonomous-ad-viewport-bot",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Apify Playwright Actor with auto Tier-1 proxy rotation, ad popup capture and 5s dwell",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "node src/main.js"
+  },
+  "dependencies": {
+    "apify": "^3.2.6",
+    "crawlee": "^3.11.5",
+    "playwright": "^1.48.0"
+  }
+}
